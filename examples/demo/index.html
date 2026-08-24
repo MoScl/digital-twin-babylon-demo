@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>数字孪生 API 层 · M2 可视化演示</title>
+<title>数字孪生 API 层 · 交互演示</title>
 <style>
   :root {
     --bg: #f5f6f8; --panel: #ffffff; --border: #e3e6eb; --text: #24292f;
@@ -56,12 +56,33 @@
   .row select, .row input[type=range] { flex: 1; font-size: 12px; padding: 3px 6px; border: 1px solid var(--border); border-radius: 4px; background: #fff; }
   .row .val { font-family: var(--mono); font-size: 11px; width: 36px; text-align: right; color: var(--muted); }
   .note { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  /* 引导 / 说明 */
+  .btn-tour { width: 100%; font-size: 13px; font-weight: 600; padding: 9px 10px; border: none; background: var(--accent); color: #fff; border-radius: 8px; cursor: pointer; margin-bottom: 12px; }
+  .btn-tour:hover { background: #2257c9; }
+  .btn-tour:disabled { opacity: .6; cursor: default; }
+  details.intro { margin-bottom: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--accent-weak); overflow: hidden; }
+  details.intro > summary { cursor: pointer; padding: 9px 12px; font-size: 12px; font-weight: 600; color: var(--accent); list-style: none; user-select: none; }
+  details.intro > summary::-webkit-details-marker { display: none; }
+  details.intro[open] > summary { border-bottom: 1px solid var(--border); }
+  details.intro .body { padding: 10px 12px; font-size: 12px; line-height: 1.65; }
+  details.intro code { font-family: var(--mono); background: rgba(255,255,255,.75); padding: 1px 5px; border-radius: 4px; font-size: 11px; color: #1f4fb0; }
+  details.intro ul { margin: 8px 0 2px 16px; }
+  details.intro li { margin-bottom: 4px; }
+  details.intro b { color: var(--text); }
+  .legend { display: flex; flex-wrap: wrap; gap: 12px; padding: 8px 12px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); background: #fafbfc; }
+  .legend .item { display: flex; align-items: center; gap: 5px; }
+  .legend .sw { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+  .legend .sw.ok { background: var(--ok); }
+  .legend .sw.err { background: var(--err); }
+  .legend .sw.evt { background: #a371f7; }
+  .legend .sw.cmd { background: var(--accent); }
 </style>
 </head>
 <body>
 <header>
   <h1>数字孪生 API 层 · 演示</h1>
-  <span class="tag">M2 · Babylon.js 适配</span>
+  <span class="tag">Babylon.js 适配 · 统一命令入口</span>
   <span class="meta" id="meta">初始化中…</span>
 </header>
 <main>
@@ -71,6 +92,22 @@
   </div>
   <aside>
     <div id="cmd-panel">
+      <button class="btn-tour" id="tour-btn">▶ 一键演示（引导流程）</button>
+      <details class="intro" open>
+        <summary>使用说明 / 这是什么</summary>
+        <div class="body">
+          本页演示一套<strong>统一命令入口</strong>的数字孪生 API 层（Babylon.js 适配）。
+          所有能力都通过同一行代码调用：<br />
+          <code>twin.execute(command, params)</code><br />
+          并返回统一信封 <code>{ code, message, data, requestId, elapsed }</code>。
+          <ul>
+            <li><b>左侧按钮</b>：每个对应一个命令，鼠标悬停可见真实命令名与参数</li>
+            <li><b>右侧日志</b>：每次调用的命令名、返回码与耗时（绿=成功 / 红=错误 / 紫=事件 / 蓝=命令）</li>
+            <li><b>场景交互</b>：左键拖拽旋转 · 滚轮缩放 · 右键平移 · 点击建筑触发实体回调</li>
+            <li><b>一键演示</b>：按顺序自动跑一遍核心能力，适合快速了解</li>
+          </ul>
+        </div>
+      </details>
       <div class="group">
         <h3>场景</h3>
         <div class="btns">
@@ -175,6 +212,12 @@
     <div id="log-panel">
       <div class="log-head"><b>调用与事件日志</b><button id="clear-log">清空</button></div>
       <div id="log"></div>
+      <div class="legend">
+        <span class="item"><span class="sw ok"></span>成功 code=0</span>
+        <span class="item"><span class="sw err"></span>错误</span>
+        <span class="item"><span class="sw evt"></span>事件回调</span>
+        <span class="item"><span class="sw cmd"></span>命令调用</span>
+      </div>
     </div>
   </aside>
 </main>
@@ -224,6 +267,7 @@ const api = await createDigitalTwin(
 
 /* ============ 事件订阅 ============ */
 api.on("SceneReady", (p) => {
+  window.__sceneReady = true;
   $("#status").classList.add("ready");
   $("#status-text").textContent = `场景就绪 · ${p.loadElapsed}ms`;
   log("evt", `SceneReady <span class="dim">sceneId=${p.sceneId} loadElapsed=${p.loadElapsed}ms</span>`);
@@ -387,7 +431,56 @@ api.registerCommand({
 });
 
 /* ============ UI 绑定 ============ */
+const TITLES = {
+  "GetSceneInfo": "GetSceneInfo — 获取当前场景信息（实体数/图层数/包围盒）",
+  "reload": "LoadScene — 重新加载 programmatic:demo 程序化场景",
+  "helmet": "SwitchScene — 切换到真实 glTF 资产场景（DamagedHelmet）",
+  "SetEnvironment-noon": "SetEnvironment — 正午光照（timeOfDay=12）",
+  "SetEnvironment-dusk": "SetEnvironment — 黄昏光照（timeOfDay=18.5）",
+  "CameraFlyTo-overview": "CameraFlyTo — 平滑飞行至全景视角",
+  "CameraFlyTo-street": "CameraFlyTo — 飞行至街道级视角",
+  "CameraFlyTo-top": "CameraFlyTo — 飞行至顶视（俯视）",
+  "CameraFocusOn-car": "CameraFocusOn — 聚焦实体 vehicle-01（巡检车）",
+  "GetCameraInfo": "GetCameraInfo — 读取当前相机位姿",
+  "ResetCameraView": "ResetCameraView — 回到默认视角",
+  "CameraRoamStart": "CameraRoamStart — 沿关键帧路径自动漫游",
+  "CameraRoamStop": "CameraRoamStop — 停止漫游",
+  "SetEntityVisible-hide": "SetEntityVisible — 隐藏 buildings-01",
+  "SetEntityVisible-show": "SetEntityVisible — 显示 buildings-01",
+  "SetEntityOutline-on": "SetEntityOutline — 描边 buildings-02",
+  "SetEntityOutline-off": "SetEntityOutline — 取消描边",
+  "SetEntityHighlight-on": "SetEntityHighlight — 高亮 buildings-03",
+  "SetEntityHighlight-off": "SetEntityHighlight — 取消高亮",
+  "LocateEntity": "LocateEntity — 相机定位至 facilities-25",
+  "GetEntityInfo": "GetEntityInfo — 查询实体元数据",
+  "MoveEntityByPath": "MoveEntityByPath — 巡检车沿路径巡线",
+  "GetLayerList": "GetLayerList — 列出场景图层",
+  "SetLayerVisible-off": "SetLayerVisible — 隐藏 facilities 图层",
+  "SetLayerVisible-on": "SetLayerVisible — 显示 facilities 图层",
+  "SetLayerOpacity": "SetLayerOpacity — 建筑图层半透明",
+  "SetWeatherEffect": "SetWeatherEffect — 雨雪雾天气特效",
+  "SetHeatmap": "SetHeatmap — 地面热力图",
+  "SetHeatmap-column": "SetHeatmap — 柱状热力图",
+  "UpdateHeatmap": "UpdateHeatmap — 更新热力数据",
+  "RemoveHeatmap": "RemoveHeatmap — 移除热力图",
+  "SetHighlightRegion": "SetHighlightRegion — 高亮区域（拉伸体）",
+  "SetParticleEffect": "SetParticleEffect — 粒子火焰特效",
+  "SetLightEffect": "SetLightEffect — 点光源特效",
+  "AddPOI": "AddPOI — 添加 HTML 信息标注",
+  "AddPOI-xss": "AddPOI — 演示 D3 安全：注入脚本/危险标签被剥离",
+  "UpdatePOI": "UpdatePOI — 更新标注内容",
+  "AddPath": "AddPath — 流动路径线",
+  "Add3DText": "Add3DText — 3D 文字",
+  "ClearCoverings": "ClearCoverings — 清空全部覆盖物",
+  "bad-command": "调用不存在命令 → 返回 2001 COMMAND_NOT_FOUND",
+  "bad-scene": "加载未注册场景 → 返回 3001 SCENE_NOT_FOUND",
+  "bad-selector": "空/非法选择器 → 返回 2002 INVALID_PARAMS",
+  "custom-cmd": "Demo.GetServerTime — 业务方自定义命令（扩展性演示）",
+  "list-commands": "listCommands — 列出所有已注册命令",
+};
 document.querySelectorAll("button.cmd").forEach((btn) => {
+  const key = btn.dataset.run;
+  if (TITLES[key]) btn.title = TITLES[key];
   btn.addEventListener("click", () => {
     const fn = actions[btn.dataset.run];
     if (fn) Promise.resolve(fn()).catch((e) => log("err", `异常: ${escapeHtml(String(e?.message ?? e))}`));
@@ -395,12 +488,58 @@ document.querySelectorAll("button.cmd").forEach((btn) => {
 });
 $("#weather-intensity").addEventListener("input", (e) => { $("#weather-intensity-val").textContent = e.target.value; });
 
+/* ============ 一键演示（引导流程） ============ */
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let touring = false;
+async function tour() {
+  if (touring) return;
+  touring = true;
+  const btn = $("#tour-btn");
+  btn.disabled = true; btn.textContent = "演示进行中…";
+  log("cmd", `▶ 开始引导演示：相机飞行 → 实体高亮 → 标注 → 热力图 → 天气 → 漫游 → 复位`);
+  try {
+    await run("CameraFlyTo", { pose: { position: { x: 160, y: 120, z: 160 }, pitch: -32, yaw: 225 }, duration: 1800, easing: "easeInOutCubic" });
+    await sleep(1200);
+    log("cmd", `① 实体高亮：SetEntityHighlight 高亮目标建筑`);
+    await run("SetEntityHighlight", { targets: { eids: ["buildings-03"] }, enable: true, color: "#409EFF" });
+    await sleep(900);
+    log("cmd", `② 标注覆盖物：AddPOI 在场景中叠加信息卡片`);
+    await run("AddPOI", { poiId: "poi-tour", position: { x: 25, y: 30, z: 0 }, content: `<div style="background:#fff;border:1px solid #e3e6eb;border-radius:6px;padding:6px 10px;box-shadow:0 2px 8px rgba(0,0,0,.15);font-size:12px;"><b>中央枢纽塔</b><br/><span style="color:#6a737d">负载 76% · 在线</span></div>`, offset: { x: 0, y: -40 } });
+    await sleep(900);
+    log("cmd", `③ 数据可视化：SetHeatmap 渲染地面热力图`);
+    await run("SetHeatmap", { heatmapId: "hm-tour", points: heatPoints(), radius: 30 });
+    await sleep(1100);
+    log("cmd", `④ 天气特效：SetWeatherEffect 切换为下雨`);
+    await run("SetWeatherEffect", { type: "rain", intensity: 0.5 });
+    await sleep(1600);
+    log("cmd", `⑤ 相机漫游：CameraRoamStart 沿预设路径自动巡游`);
+    await run("CameraRoamStart", { keyframes: [ { position: { x: 140, y: 100, z: 140 }, pitch: -30, yaw: 225 }, { position: { x: -140, y: 100, z: 140 }, pitch: -30, yaw: 135 }, { position: { x: -140, y: 100, z: -140 }, pitch: -30, yaw: 45 }, { position: { x: 140, y: 100, z: -140 }, pitch: -30, yaw: 315 } ], loop: "loop", totalDuration: 6000 });
+    await sleep(6500);
+    await run("CameraRoamStop");
+    log("cmd", `⑥ 复位：清除覆盖物 / 热力图 / 高亮 / 天气，回到全景`);
+    await run("ClearCoverings", {});
+    await run("RemoveHeatmap", { heatmapId: "hm-tour" });
+    await run("SetEntityHighlight", { targets: { eids: ["buildings-03"] }, enable: false });
+    await run("SetWeatherEffect", { type: "clear", intensity: 0 });
+    await run("CameraFlyTo", { pose: { position: { x: 160, y: 120, z: 160 }, pitch: -32, yaw: 225 }, duration: 1500 });
+    log("ok", `✔ 引导演示结束 · 左侧任意按钮可继续单独体验`);
+  } catch (e) {
+    log("err", `演示中断: ${escapeHtml(String(e?.message ?? e))}`);
+  } finally {
+    touring = false;
+    btn.disabled = false; btn.textContent = "▶ 一键演示（引导流程）";
+  }
+}
+$("#tour-btn").addEventListener("click", () => tour());
+
 /* ============ 启动 ============ */
 const boot = await run("LoadScene", { sceneId: "demo" });
 const cmds = api.listCommands();
 $("#meta").innerHTML = `内置命令 <b>${cmds.filter((c) => !c.name.startsWith("Demo.")).length}</b> + 自定义 1 · SDK ${api.diagnostics.version} · Babylon WebGL`;
 if (boot.code === 0) {
-  log("cmd", `演示就绪：点击左侧按钮体验统一入口 <span class="dim">twin.execute(command, params)</span>`);
+  log("cmd", `演示就绪：点击左侧按钮，或点「一键演示」体验统一入口 <span class="dim">twin.execute(command, params)</span>`);
+  // 默认飞至全景视角，第一眼即有完整画面
+  await run("CameraFlyTo", { pose: { position: { x: 160, y: 120, z: 160 }, pitch: -32, yaw: 225 }, duration: 1600, easing: "easeInOutCubic" });
 }
 </script>
 </body>
