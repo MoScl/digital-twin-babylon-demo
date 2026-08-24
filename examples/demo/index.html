@@ -88,11 +88,11 @@
 <main>
   <div id="viewport">
     <div id="status"><span class="dot"></span><span id="status-text">引擎启动中</span></div>
-    <div class="hint">左键拖拽旋转 · 滚轮缩放 · 右键平移 · 点击建筑查看实体事件</div>
+    <div class="hint">左键拖拽旋转 · 滚轮缩放 · 右键平移 · 点击模型建筑查看实体事件</div>
   </div>
   <aside>
     <div id="cmd-panel">
-      <button class="btn-tour" id="tour-btn">▶ 一键演示（引导流程）</button>
+      <button class="btn-tour" id="tour-btn">▶ 一键演示（东湖园水模型场景）</button>
       <details class="intro" open>
         <summary>使用说明 / 这是什么</summary>
         <div class="body">
@@ -101,10 +101,12 @@
           <code>twin.execute(command, params)</code><br />
           并返回统一信封 <code>{ code, message, data, requestId, elapsed }</code>。
           <ul>
+            <li><b>当前场景</b>：「东湖园水」小区数字孪生模型 —— 12 个 GLB（建筑/设施/植被）经 <code>SceneManifest.assets</code> 合并接入，网格自动注册为实体（eid=图层-序号），支持点击拾取</li>
+            <li><b>数据联动</b>：「模拟数据更新」用业务数据驱动标注状态变化（UpdatePOI），体现数据-状态联动</li>
             <li><b>左侧按钮</b>：每个对应一个命令，鼠标悬停可见真实命令名与参数</li>
             <li><b>右侧日志</b>：每次调用的命令名、返回码与耗时（绿=成功 / 红=错误 / 紫=事件 / 蓝=命令）</li>
-            <li><b>场景交互</b>：左键拖拽旋转 · 滚轮缩放 · 右键平移 · 点击建筑触发实体回调</li>
-            <li><b>一键演示</b>：按顺序自动跑一遍核心能力，适合快速了解</li>
+            <li><b>场景交互</b>：左键拖拽旋转 · 滚轮缩放 · 右键平移 · 点击模型建筑触发实体回调</li>
+            <li><b>一键演示</b>：按顺序自动跑一遍模型场景核心能力，适合快速了解</li>
           </ul>
         </div>
       </details>
@@ -117,6 +119,22 @@
           <button class="cmd" data-run="SetEnvironment-noon">正午光照</button>
           <button class="cmd" data-run="SetEnvironment-dusk">黄昏光照</button>
         </div>
+      </div>
+      <div class="group" id="ys-group">
+        <h3>东湖园水 · 数字孪生模型</h3>
+        <div class="btns">
+          <button class="cmd" data-run="ys-load">加载小区模型场景</button>
+          <button class="cmd" data-run="ys-flyto">飞至全景</button>
+          <button class="cmd" data-run="ys-focus-b1">聚焦建筑-01</button>
+          <button class="cmd" data-run="ys-outline">描边建筑-01</button>
+          <button class="cmd" data-run="ys-veg-off">隐藏植被层</button>
+          <button class="cmd" data-run="ys-veg-on">显示植被层</button>
+          <button class="cmd" data-run="ys-build-op">建筑半透明</button>
+          <button class="cmd" data-run="ys-poi">添加 POI 标注</button>
+          <button class="cmd" data-run="ys-poi-sync">模拟数据更新</button>
+          <button class="cmd" data-run="ys-clear">清空模型场景覆盖物</button>
+        </div>
+        <p class="note">12 个 GLB（建筑/设施/植被）通过 <code>SceneManifest.assets</code> 合并接入，网格自动注册为实体；「模拟数据更新」演示业务数据驱动标注状态联动（UpdatePOI）。</p>
       </div>
       <div class="group">
         <h3>相机</h3>
@@ -232,11 +250,20 @@
 </script>
 <script type="module">
 import { createDigitalTwin } from "@your-scope/digital-twin";
-import { createBabylonEngine } from "@your-scope/digital-twin-core";
+import { createBabylonEngine, setDracoDecoderUrl } from "@your-scope/digital-twin-core";
 
 const $ = (s) => document.querySelector(s);
 const logEl = $("#log");
 let logCount = 0;
+
+/* Draco 解码器本地化：东湖园水模型采用 KHR_draco_mesh_compression 压缩，
+   默认 CDN 在沙箱环境可能无法下载，故在引擎创建前配置本地三文件路径：
+   wasmUrl=wrapper JS、wasmBinaryUrl=wasm 二进制、fallbackUrl=JS 解码器。 */
+setDracoDecoderUrl({
+  wasmUrl: "../assets/draco/draco_wasm_wrapper_gltf.js",
+  wasmBinaryUrl: "../assets/draco/draco_decoder_gltf.wasm",
+  fallbackUrl: "../assets/draco/draco_decoder_gltf.js",
+});
 
 function log(kind, html) {
   if (logCount++ > 200) { logEl.firstChild?.remove(); }
@@ -258,12 +285,36 @@ const api = await createDigitalTwin(
       demo: { url: "programmatic:demo" },
       // 真实资产场景：公开 glTF 样例（Khronos DamagedHelmet，本地化副本），验证 SceneLoader 资产导入链路
       helmet: { url: "../assets/DamagedHelmet.glb" },
+      // 数字孪生模型场景：「东湖园水」小区（建筑/设施/植被分文件导出的 GLB 资产）。
+      // 接入方式：SceneManifest.assets 声明多资产 + 图层语义，LoadScene/SwitchScene 统一加载，
+      // 每个资产的网格由 core 自动注册为可操作实体（eid=图层-序号），并支持图层/实体/事件联动。
+      yuanshui: {
+        assets: [
+          { url: "../assets/yuanshui/cj1.glb", layer: "buildings", entityType: "building" },
+          { url: "../assets/yuanshui/cj2.glb", layer: "facilities", entityType: "facility" },
+          { url: "../assets/yuanshui/sb.glb", layer: "facilities", entityType: "facility" },
+          { url: "../assets/yuanshui/pz.glb", layer: "facilities", entityType: "facility" },
+          { url: "../assets/yuanshui/cj_zw1.glb", layer: "vegetation", entityType: "vegetation" },
+          { url: "../assets/yuanshui/cj_zw2.glb", layer: "vegetation", entityType: "vegetation" },
+          { url: "../assets/yuanshui/cj_zw3.glb", layer: "vegetation", entityType: "vegetation" },
+          { url: "../assets/yuanshui/cj_zw4.glb", layer: "vegetation", entityType: "vegetation" },
+          { url: "../assets/yuanshui/cj_zw5.glb", layer: "vegetation", entityType: "vegetation" },
+          { url: "../assets/yuanshui/cj_zw6.glb", layer: "vegetation", entityType: "vegetation" },
+          { url: "../assets/yuanshui/cj_zw7.glb", layer: "vegetation", entityType: "vegetation" },
+          { url: "../assets/yuanshui/cj_zw8.glb", layer: "vegetation", entityType: "vegetation" },
+        ],
+        preload: "lazy",
+      },
     },
     logLevel: "warn",
     commandProfiling: true,
+    defaultTimeout: 30000,
   },
   { engine: (emitter) => { const e = createBabylonEngine({ container, emitter }); (window).__dbg = e; return e; } },
 );
+
+// 暴露 API 引用，便于端到端冒烟测试直接程序化调用命令
+window.__twinApi = api;
 
 /* ============ 事件订阅 ============ */
 api.on("SceneReady", (p) => {
@@ -324,6 +375,36 @@ const actions = {
   }),
   "SetEnvironment-noon": () => run("SetEnvironment", { timeOfDay: 12 }),
   "SetEnvironment-dusk": () => run("SetEnvironment", { timeOfDay: 18.5 }),
+
+  /* 东湖园水 · 数字孪生模型（多资产场景接入） */
+  "ys-load": () => run("SwitchScene", {
+    sceneId: "yuanshui",
+    initialCamera: { position: { x: 0, y: 120, z: 190 }, pitch: -42, yaw: 180 },
+  }),
+  "ys-flyto": () => run("CameraFlyTo", {
+    pose: { position: { x: 0, y: 120, z: 190 }, pitch: -42, yaw: 180 },
+    duration: 2000, easing: "easeInOutCubic",
+  }),
+  "ys-focus-b1": () => run("CameraFocusOn", {
+    target: { entity: { eids: ["buildings-001"] } }, distance: 48, pitch: -18, duration: 1600,
+  }),
+  "ys-outline": () => run("SetEntityOutline", {
+    targets: { eids: ["buildings-001"] }, enable: true, color: "#FF6A00", thickness: 3,
+  }),
+  "ys-veg-off": () => run("SetLayerVisible", { layerNames: ["vegetation"], visible: false }),
+  "ys-veg-on": () => run("SetLayerVisible", { layerNames: ["vegetation"], visible: true }),
+  "ys-build-op": () => run("SetLayerOpacity", { layerName: "buildings", opacity: 0.35 }),
+  "ys-poi": () => run("AddPOI", {
+    poiId: "ys-poi-1",
+    position: { x: 0, y: 26, z: 0 },
+    content: `<div style="background:#fff;border:1px solid #e3e6eb;border-radius:6px;padding:6px 10px;box-shadow:0 2px 8px rgba(0,0,0,.15);font-size:12px;"><b>建筑-01 · 中央楼栋</b><br/><span style="color:#1a7f37">负荷 62% · 在线</span></div>`,
+    offset: { x: 0, y: -46 },
+  }),
+  "ys-poi-sync": () => run("UpdatePOI", {
+    poiId: "ys-poi-1",
+    content: `<div style="background:#fff;border:1px solid #e3e6eb;border-radius:6px;padding:6px 10px;box-shadow:0 2px 8px rgba(0,0,0,.15);font-size:12px;"><b>建筑-01 · 中央楼栋</b><br/><span style="color:#cf222e">负荷 96% · 告警</span></div>`,
+  }),
+  "ys-clear": () => run("ClearCoverings", {}),
 
   /* 相机 */
   "CameraFlyTo-overview": () => run("CameraFlyTo", {
@@ -437,6 +518,16 @@ const TITLES = {
   "helmet": "SwitchScene — 切换到真实 glTF 资产场景（DamagedHelmet）",
   "SetEnvironment-noon": "SetEnvironment — 正午光照（timeOfDay=12）",
   "SetEnvironment-dusk": "SetEnvironment — 黄昏光照（timeOfDay=18.5）",
+  "ys-load": "SwitchScene — 加载「东湖园水」多资产模型场景（12×GLB：建筑/设施/植被）",
+  "ys-flyto": "CameraFlyTo — 飞行至小区全景视角",
+  "ys-focus-b1": "CameraFocusOn — 聚焦实体 buildings-001（GLB 导入后自动注册的实体）",
+  "ys-outline": "SetEntityOutline — 描边 buildings-001",
+  "ys-veg-off": "SetLayerVisible — 隐藏 vegetation 图层（图层联动）",
+  "ys-veg-on": "SetLayerVisible — 显示 vegetation 图层",
+  "ys-build-op": "SetLayerOpacity — 建筑图层半透明",
+  "ys-poi": "AddPOI — 在建筑上方叠加 HTML 信息标注",
+  "ys-poi-sync": "UpdatePOI — 业务数据更新驱动标注状态联动（在线→告警）",
+  "ys-clear": "ClearCoverings — 清空模型场景覆盖物",
   "CameraFlyTo-overview": "CameraFlyTo — 平滑飞行至全景视角",
   "CameraFlyTo-street": "CameraFlyTo — 飞行至街道级视角",
   "CameraFlyTo-top": "CameraFlyTo — 飞行至顶视（俯视）",
@@ -488,7 +579,7 @@ document.querySelectorAll("button.cmd").forEach((btn) => {
 });
 $("#weather-intensity").addEventListener("input", (e) => { $("#weather-intensity-val").textContent = e.target.value; });
 
-/* ============ 一键演示（引导流程） ============ */
+/* ============ 一键演示（东湖园水模型场景 · 引导流程） ============ */
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let touring = false;
 async function tour() {
@@ -496,50 +587,70 @@ async function tour() {
   touring = true;
   const btn = $("#tour-btn");
   btn.disabled = true; btn.textContent = "演示进行中…";
-  log("cmd", `▶ 开始引导演示：相机飞行 → 实体高亮 → 标注 → 热力图 → 天气 → 漫游 → 复位`);
+  log("cmd", `▶ 开始引导演示：加载模型 → 全景 → 实体描边 → 图层联动 → 标注 → 热力图 → 天气 → 漫游 → 复位`);
   try {
-    await run("CameraFlyTo", { pose: { position: { x: 160, y: 120, z: 160 }, pitch: -32, yaw: 225 }, duration: 1800, easing: "easeInOutCubic" });
-    await sleep(1200);
-    log("cmd", `① 实体高亮：SetEntityHighlight 高亮目标建筑`);
-    await run("SetEntityHighlight", { targets: { eids: ["buildings-03"] }, enable: true, color: "#409EFF" });
+    log("cmd", `① 场景加载：SwitchScene 加载「东湖园水」多资产模型场景`);
+    await run("SwitchScene", {
+      sceneId: "yuanshui",
+      initialCamera: { position: { x: 0, y: 120, z: 190 }, pitch: -42, yaw: 180 },
+    });
     await sleep(900);
-    log("cmd", `② 标注覆盖物：AddPOI 在场景中叠加信息卡片`);
-    await run("AddPOI", { poiId: "poi-tour", position: { x: 25, y: 30, z: 0 }, content: `<div style="background:#fff;border:1px solid #e3e6eb;border-radius:6px;padding:6px 10px;box-shadow:0 2px 8px rgba(0,0,0,.15);font-size:12px;"><b>中央枢纽塔</b><br/><span style="color:#6a737d">负载 76% · 在线</span></div>`, offset: { x: 0, y: -40 } });
+    log("cmd", `② 相机飞行：CameraFlyTo 平滑飞至全景`);
+    await run("CameraFlyTo", { pose: { position: { x: 0, y: 120, z: 190 }, pitch: -42, yaw: 180 }, duration: 1800, easing: "easeInOutCubic" });
+    await sleep(1600);
+    log("cmd", `③ 实体控制：SetEntityOutline 描边 buildings-001（GLB 自动注册实体）`);
+    await run("SetEntityOutline", { targets: { eids: ["buildings-001"] }, enable: true, color: "#FF6A00", thickness: 3 });
     await sleep(900);
-    log("cmd", `③ 数据可视化：SetHeatmap 渲染地面热力图`);
-    await run("SetHeatmap", { heatmapId: "hm-tour", points: heatPoints(), radius: 30 });
+    log("cmd", `④ 图层联动：SetLayerVisible 隐藏/显示 vegetation 图层`);
+    await run("SetLayerVisible", { layerNames: ["vegetation"], visible: false });
+    await sleep(800);
+    await run("SetLayerVisible", { layerNames: ["vegetation"], visible: true });
+    await sleep(800);
+    log("cmd", `⑤ 状态标注：AddPOI 在建筑上方叠加业务信息卡片`);
+    await run("AddPOI", { poiId: "poi-tour", position: { x: 0, y: 26, z: 0 }, content: `<div style="background:#fff;border:1px solid #e3e6eb;border-radius:6px;padding:6px 10px;box-shadow:0 2px 8px rgba(0,0,0,.15);font-size:12px;"><b>建筑-01 · 中央楼栋</b><br/><span style="color:#1a7f37">负荷 62% · 在线</span></div>`, offset: { x: 0, y: -46 } });
+    await sleep(900);
+    log("cmd", `⑥ 数据可视化：SetHeatmap 渲染地面热力图`);
+    await run("SetHeatmap", { heatmapId: "hm-tour", points: circle(45, 10, 0).map((p, i) => ({ position: p, weight: 0.3 + 0.6 * Math.abs(Math.sin(i * 1.7)) })), radius: 18 });
     await sleep(1100);
-    log("cmd", `④ 天气特效：SetWeatherEffect 切换为下雨`);
+    log("cmd", `⑦ 天气特效：SetWeatherEffect 切换为下雨`);
     await run("SetWeatherEffect", { type: "rain", intensity: 0.5 });
     await sleep(1600);
-    log("cmd", `⑤ 相机漫游：CameraRoamStart 沿预设路径自动巡游`);
-    await run("CameraRoamStart", { keyframes: [ { position: { x: 140, y: 100, z: 140 }, pitch: -30, yaw: 225 }, { position: { x: -140, y: 100, z: 140 }, pitch: -30, yaw: 135 }, { position: { x: -140, y: 100, z: -140 }, pitch: -30, yaw: 45 }, { position: { x: 140, y: 100, z: -140 }, pitch: -30, yaw: 315 } ], loop: "loop", totalDuration: 6000 });
-    await sleep(6500);
+    log("cmd", `⑧ 相机漫游：CameraRoamStart 环绕小区自动巡游`);
+    await run("CameraRoamStart", { keyframes: [
+      { position: { x: 110, y: 60, z: 110 }, pitch: -30, yaw: 225 },
+      { position: { x: -110, y: 60, z: 110 }, pitch: -30, yaw: 135 },
+      { position: { x: -110, y: 60, z: -110 }, pitch: -30, yaw: 45 },
+      { position: { x: 110, y: 60, z: -110 }, pitch: -30, yaw: 315 },
+    ], loop: "loop", totalDuration: 12000 });
+    await sleep(12600);
     await run("CameraRoamStop");
-    log("cmd", `⑥ 复位：清除覆盖物 / 热力图 / 高亮 / 天气，回到全景`);
+    log("cmd", `⑨ 复位：清除覆盖物 / 热力图 / 描边 / 天气，回到全景`);
     await run("ClearCoverings", {});
     await run("RemoveHeatmap", { heatmapId: "hm-tour" });
-    await run("SetEntityHighlight", { targets: { eids: ["buildings-03"] }, enable: false });
+    await run("SetEntityOutline", { targets: { eids: ["buildings-001"] }, enable: false });
     await run("SetWeatherEffect", { type: "clear", intensity: 0 });
-    await run("CameraFlyTo", { pose: { position: { x: 160, y: 120, z: 160 }, pitch: -32, yaw: 225 }, duration: 1500 });
+    await run("CameraFlyTo", { pose: { position: { x: 0, y: 120, z: 190 }, pitch: -42, yaw: 180 }, duration: 1500 });
     log("ok", `✔ 引导演示结束 · 左侧任意按钮可继续单独体验`);
   } catch (e) {
     log("err", `演示中断: ${escapeHtml(String(e?.message ?? e))}`);
   } finally {
     touring = false;
-    btn.disabled = false; btn.textContent = "▶ 一键演示（引导流程）";
+    btn.disabled = false; btn.textContent = "▶ 一键演示（东湖园水模型场景）";
   }
 }
 $("#tour-btn").addEventListener("click", () => tour());
 
-/* ============ 启动 ============ */
-const boot = await run("LoadScene", { sceneId: "demo" });
+/* ============ 启动：默认加载「东湖园水」数字孪生模型场景 ============ */
+const boot = await run("SwitchScene", {
+  sceneId: "yuanshui",
+  initialCamera: { position: { x: 0, y: 120, z: 190 }, pitch: -42, yaw: 180 },
+});
 const cmds = api.listCommands();
 $("#meta").innerHTML = `内置命令 <b>${cmds.filter((c) => !c.name.startsWith("Demo.")).length}</b> + 自定义 1 · SDK ${api.diagnostics.version} · Babylon WebGL`;
 if (boot.code === 0) {
-  log("cmd", `演示就绪：点击左侧按钮，或点「一键演示」体验统一入口 <span class="dim">twin.execute(command, params)</span>`);
+  log("cmd", `演示就绪：左侧按钮或「一键演示」体验统一入口 <span class="dim">twin.execute(command, params)</span> —— 当前为「东湖园水」模型场景（12×GLB 多资产）`);
   // 默认飞至全景视角，第一眼即有完整画面
-  await run("CameraFlyTo", { pose: { position: { x: 160, y: 120, z: 160 }, pitch: -32, yaw: 225 }, duration: 1600, easing: "easeInOutCubic" });
+  await run("CameraFlyTo", { pose: { position: { x: 0, y: 120, z: 190 }, pitch: -42, yaw: 180 }, duration: 1600, easing: "easeInOutCubic" });
 }
 </script>
 </body>
