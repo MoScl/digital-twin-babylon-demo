@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>数字孪生 API 层 · M2 可视化演示</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --panel: #ffffff; --border: #e3e6eb; --text: #24292f;
+    --muted: #6a737d; --accent: #2f6fed; --accent-weak: #e8f0fe;
+    --ok: #1a7f37; --err: #cf222e; --warn: #9a6700; --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body { font: 13px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; color: var(--text); background: var(--bg); display: flex; flex-direction: column; }
+
+  header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--border); }
+  header h1 { font-size: 15px; font-weight: 600; }
+  header .tag { font-size: 11px; color: var(--accent); background: var(--accent-weak); border-radius: 4px; padding: 2px 8px; }
+  header .meta { margin-left: auto; color: var(--muted); font-size: 12px; font-family: var(--mono); }
+  header .meta b { color: var(--ok); }
+
+  main { flex: 1; display: flex; min-height: 0; }
+  #viewport { flex: 1; position: relative; min-width: 0; background: linear-gradient(180deg, #1b2735 0%, #2c3e50 100%); }
+  #viewport .hint { position: absolute; left: 12px; bottom: 12px; color: rgba(255,255,255,.65); font-size: 11px; font-family: var(--mono); pointer-events: none; }
+  #status { position: absolute; top: 12px; left: 12px; background: rgba(0,0,0,.45); color: #fff; border-radius: 6px; padding: 6px 10px; font-size: 12px; font-family: var(--mono); pointer-events: none; }
+  #status .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #f0b429; margin-right: 6px; }
+  #status.ready .dot { background: #3fb950; }
+
+  aside { width: 620px; display: flex; border-left: 1px solid var(--border); background: var(--panel); }
+  #cmd-panel { width: 330px; overflow-y: auto; padding: 12px; border-right: 1px solid var(--border); }
+  #log-panel { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #log-panel .log-head { display: flex; align-items: center; padding: 10px 12px 6px; }
+  #log-panel .log-head b { font-size: 12px; }
+  #log-panel .log-head button { margin-left: auto; font-size: 11px; color: var(--muted); background: none; border: 1px solid var(--border); border-radius: 4px; padding: 2px 8px; cursor: pointer; }
+  #log { flex: 1; overflow-y: auto; padding: 0 12px 12px; font-family: var(--mono); font-size: 11px; }
+  .log-item { padding: 5px 8px; border-left: 3px solid var(--border); margin-bottom: 5px; background: #fafbfc; border-radius: 0 4px 4px 0; word-break: break-all; }
+  .log-item .t { color: var(--muted); margin-right: 6px; }
+  .log-item.cmd { border-left-color: var(--accent); }
+  .log-item.ok { border-left-color: var(--ok); }
+  .log-item.err { border-left-color: var(--err); }
+  .log-item.evt { border-left-color: #a371f7; background: #f6f2ff; }
+  .log-item .code-ok { color: var(--ok); font-weight: 600; }
+  .log-item .code-err { color: var(--err); font-weight: 600; }
+  .log-item .dim { color: var(--muted); }
+
+  .group { margin-bottom: 12px; }
+  .group > h3 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+  .btns { display: flex; flex-wrap: wrap; gap: 6px; }
+  button.cmd { font-size: 12px; padding: 5px 10px; border: 1px solid var(--border); background: var(--panel); color: var(--text); border-radius: 6px; cursor: pointer; transition: all .12s; }
+  button.cmd:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-weak); }
+  button.cmd:disabled { opacity: .45; cursor: not-allowed; }
+  button.cmd.wide { width: 100%; }
+  .row { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
+  .row label { font-size: 12px; color: var(--muted); width: 64px; flex: none; }
+  .row select, .row input[type=range] { flex: 1; font-size: 12px; padding: 3px 6px; border: 1px solid var(--border); border-radius: 4px; background: #fff; }
+  .row .val { font-family: var(--mono); font-size: 11px; width: 36px; text-align: right; color: var(--muted); }
+  .note { font-size: 11px; color: var(--muted); margin-top: 4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>数字孪生 API 层 · 演示</h1>
+  <span class="tag">M2 · Babylon.js 适配</span>
+  <span class="meta" id="meta">初始化中…</span>
+</header>
+<main>
+  <div id="viewport">
+    <div id="status"><span class="dot"></span><span id="status-text">引擎启动中</span></div>
+    <div class="hint">左键拖拽旋转 · 滚轮缩放 · 右键平移 · 点击建筑查看实体事件</div>
+  </div>
+  <aside>
+    <div id="cmd-panel">
+      <div class="group">
+        <h3>场景</h3>
+        <div class="btns">
+          <button class="cmd" data-run="GetSceneInfo">GetSceneInfo</button>
+          <button class="cmd" data-run="reload">重载场景</button>
+          <button class="cmd" data-run="helmet">切换真实资产场景</button>
+          <button class="cmd" data-run="SetEnvironment-noon">正午光照</button>
+          <button class="cmd" data-run="SetEnvironment-dusk">黄昏光照</button>
+        </div>
+      </div>
+      <div class="group">
+        <h3>相机</h3>
+        <div class="btns">
+          <button class="cmd" data-run="CameraFlyTo-overview">飞至全景</button>
+          <button class="cmd" data-run="CameraFlyTo-street">飞至街道</button>
+          <button class="cmd" data-run="CameraFlyTo-top">顶视图</button>
+          <button class="cmd" data-run="CameraFocusOn-car">聚焦巡检车</button>
+          <button class="cmd" data-run="GetCameraInfo">GetCameraInfo</button>
+          <button class="cmd" data-run="ResetCameraView">重置视角</button>
+          <button class="cmd" data-run="CameraRoamStart">开始漫游</button>
+          <button class="cmd" data-run="CameraRoamStop">停止漫游</button>
+        </div>
+      </div>
+      <div class="group">
+        <h3>实体</h3>
+        <div class="btns">
+          <button class="cmd" data-run="SetEntityVisible-hide">隐藏建筑-01</button>
+          <button class="cmd" data-run="SetEntityVisible-show">显示建筑-01</button>
+          <button class="cmd" data-run="SetEntityOutline-on">描边建筑-02</button>
+          <button class="cmd" data-run="SetEntityOutline-off">取消描边</button>
+          <button class="cmd" data-run="SetEntityHighlight-on">高亮建筑-03</button>
+          <button class="cmd" data-run="SetEntityHighlight-off">取消高亮</button>
+          <button class="cmd" data-run="LocateEntity">定位设施-25</button>
+          <button class="cmd" data-run="GetEntityInfo">GetEntityInfo</button>
+          <button class="cmd" data-run="MoveEntityByPath">巡检车巡线</button>
+        </div>
+      </div>
+      <div class="group">
+        <h3>图层</h3>
+        <div class="btns">
+          <button class="cmd" data-run="GetLayerList">GetLayerList</button>
+          <button class="cmd" data-run="SetLayerVisible-off">隐藏设施层</button>
+          <button class="cmd" data-run="SetLayerVisible-on">显示设施层</button>
+          <button class="cmd" data-run="SetLayerOpacity">建筑半透明</button>
+        </div>
+      </div>
+      <div class="group">
+        <h3>天气特效</h3>
+        <div class="row">
+          <label>天气</label>
+          <select id="weather-type">
+            <option value="clear">晴天（清除）</option>
+            <option value="rain">下雨</option>
+            <option value="snow">下雪</option>
+            <option value="fog">雾气</option>
+          </select>
+        </div>
+        <div class="row">
+          <label>强度</label>
+          <input type="range" id="weather-intensity" min="0.1" max="1" step="0.1" value="0.5" />
+          <span class="val" id="weather-intensity-val">0.5</span>
+        </div>
+        <div class="btns">
+          <button class="cmd wide" data-run="SetWeatherEffect">SetWeatherEffect</button>
+        </div>
+      </div>
+      <div class="group">
+        <h3>特效</h3>
+        <div class="btns">
+          <button class="cmd" data-run="SetHeatmap">热力图（贴地）</button>
+          <button class="cmd" data-run="SetHeatmap-column">热力图（柱状）</button>
+          <button class="cmd" data-run="UpdateHeatmap">更新热力数据</button>
+          <button class="cmd" data-run="RemoveHeatmap">移除热力图</button>
+          <button class="cmd" data-run="SetHighlightRegion">高亮区域</button>
+          <button class="cmd" data-run="SetParticleEffect">粒子火焰</button>
+          <button class="cmd" data-run="SetLightEffect">点光源</button>
+        </div>
+      </div>
+      <div class="group">
+        <h3>标注 / 覆盖物</h3>
+        <div class="btns">
+          <button class="cmd" data-run="AddPOI">添加 POI 标注</button>
+          <button class="cmd" data-run="AddPOI-xss">POI 白名单过滤</button>
+          <button class="cmd" data-run="UpdatePOI">更新 POI</button>
+          <button class="cmd" data-run="AddPath">流动路径</button>
+          <button class="cmd" data-run="Add3DText">3D 文字</button>
+          <button class="cmd" data-run="ClearCoverings">清空覆盖物</button>
+        </div>
+        <p class="note">「POI 白名单过滤」演示决策 D3：注入脚本与危险标签会被剥离，仅保留白名单标签与文本。</p>
+      </div>
+      <div class="group">
+        <h3>错误码 / 扩展性</h3>
+        <div class="btns">
+          <button class="cmd" data-run="bad-command">未知命令 (2001)</button>
+          <button class="cmd" data-run="bad-scene">未注册场景 (3001)</button>
+          <button class="cmd" data-run="bad-selector">非法参数 (2002)</button>
+          <button class="cmd" data-run="custom-cmd">自定义命令示例</button>
+          <button class="cmd" data-run="list-commands">命令清单</button>
+        </div>
+      </div>
+    </div>
+    <div id="log-panel">
+      <div class="log-head"><b>调用与事件日志</b><button id="clear-log">清空</button></div>
+      <div id="log"></div>
+    </div>
+  </aside>
+</main>
+
+<script type="importmap">
+{
+  "imports": {
+    "@your-scope/digital-twin": "../../digital-twin/dist/bundle/index.js",
+    "@your-scope/digital-twin-core": "../../digital-twin-core/dist/bundle/index.js"
+  }
+}
+</script>
+<script type="module">
+import { createDigitalTwin } from "@your-scope/digital-twin";
+import { createBabylonEngine } from "@your-scope/digital-twin-core";
+
+const $ = (s) => document.querySelector(s);
+const logEl = $("#log");
+let logCount = 0;
+
+function log(kind, html) {
+  if (logCount++ > 200) { logEl.firstChild?.remove(); }
+  const t = new Date().toTimeString().slice(0, 8);
+  const div = document.createElement("div");
+  div.className = `log-item ${kind}`;
+  div.innerHTML = `<span class="t">${t}</span>${html}`;
+  logEl.appendChild(div);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+$("#clear-log").onclick = () => { logEl.innerHTML = ""; logCount = 0; };
+
+/* ============ 初始化：引擎工厂注入 + LoadScene ============ */
+const container = $("#viewport");
+const api = await createDigitalTwin(
+  {
+    container,
+    scenes: {
+      demo: { url: "programmatic:demo" },
+      // 真实资产场景：公开 glTF 样例（Khronos DamagedHelmet，本地化副本），验证 SceneLoader 资产导入链路
+      helmet: { url: "../assets/DamagedHelmet.glb" },
+    },
+    logLevel: "warn",
+    commandProfiling: true,
+  },
+  { engine: (emitter) => { const e = createBabylonEngine({ container, emitter }); (window).__dbg = e; return e; } },
+);
+
+/* ============ 事件订阅 ============ */
+api.on("SceneReady", (p) => {
+  $("#status").classList.add("ready");
+  $("#status-text").textContent = `场景就绪 · ${p.loadElapsed}ms`;
+  log("evt", `SceneReady <span class="dim">sceneId=${p.sceneId} loadElapsed=${p.loadElapsed}ms</span>`);
+});
+api.on("EntityClick", (p) =>
+  log("evt", `EntityClick <span class="dim">eid=${p.eid}${p.entityName ? " name=" + p.entityName : ""} screen=(${p.screen.x},${p.screen.y})</span>`));
+api.on("SceneClick", (p) =>
+  log("evt", `SceneClick <span class="dim">world=(${p.position.x.toFixed(1)}, ${p.position.y.toFixed(1)}, ${p.position.z.toFixed(1)})</span>`));
+api.on("EntityHover", (p) => {
+  if (p.eid) log("evt", `EntityHover <span class="dim">eid=${p.eid}</span>`);
+});
+api.on("CameraChanged", (p) => {
+  const { position: pos, pitch, yaw } = p.pose;
+  $("#status-text").textContent =
+    `相机 (${pos.x.toFixed(0)}, ${pos.y.toFixed(0)}, ${pos.z.toFixed(0)}) pitch=${pitch.toFixed(0)}° yaw=${yaw.toFixed(0)}°`;
+});
+
+/* ============ 命令执行封装 ============ */
+async function run(command, params) {
+  const t0 = performance.now();
+  const res = await api.execute(command, params);
+  const wall = (performance.now() - t0).toFixed(0);
+  const ok = res.code === 0;
+  const dataStr = res.data !== undefined && res.data !== null
+    ? JSON.stringify(res.data, (k, v) => typeof v === "number" ? Math.round(v * 100) / 100 : v)
+    : "";
+  log(ok ? "ok" : "err",
+    `${command} <span class="${ok ? "code-ok" : "code-err"}">code=${res.code}</span> <span class="dim">${res.elapsed}ms / wall ${wall}ms · ${res.requestId}</span>` +
+    (ok && dataStr ? `<br/><span class="dim">${escapeHtml(dataStr).slice(0, 320)}</span>` : "") +
+    (!ok ? `<br/><span class="dim">${escapeHtml(res.message)}</span>` : ""));
+  return res;
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+/* ============ 命令参数 ============ */
+const circle = (r, n, y = 0.5) =>
+  Array.from({ length: n }, (_, i) => {
+    const a = (i / n) * Math.PI * 2;
+    return { x: Math.cos(a) * r, y, z: Math.sin(a) * r };
+  });
+const heatPoints = () =>
+  circle(35, 10, 0).map((p, i) => ({ position: p, weight: 0.3 + 0.6 * Math.abs(Math.sin(i * 1.7)) }))
+    .concat([{ position: { x: 0, y: 0, z: 0 }, weight: 1 }]);
+
+const actions = {
+  /* 场景 */
+  "GetSceneInfo": () => run("GetSceneInfo"),
+  "reload": () => run("LoadScene", { sceneId: "demo" }),
+  "helmet": () => run("SwitchScene", {
+    sceneId: "helmet",
+    initialCamera: { position: { x: 0, y: 1.2, z: -4 }, pitch: -8, yaw: 0 },
+  }),
+  "SetEnvironment-noon": () => run("SetEnvironment", { timeOfDay: 12 }),
+  "SetEnvironment-dusk": () => run("SetEnvironment", { timeOfDay: 18.5 }),
+
+  /* 相机 */
+  "CameraFlyTo-overview": () => run("CameraFlyTo", {
+    pose: { position: { x: 160, y: 120, z: 160 }, pitch: -32, yaw: 225 },
+    duration: 2000, easing: "easeInOutCubic",
+  }),
+  "CameraFlyTo-street": () => run("CameraFlyTo", {
+    pose: { position: { x: 0, y: 8, z: 70 }, pitch: -5, yaw: 180 },
+    duration: 1800, easing: "easeOutQuart",
+  }),
+  "CameraFlyTo-top": () => run("CameraFlyTo", {
+    pose: { position: { x: 0, y: 220, z: 0.01 }, pitch: -89, yaw: 0 },
+    duration: 1500,
+  }),
+  "CameraFocusOn-car": () => run("CameraFocusOn", {
+    target: { entity: { eids: ["vehicle-01"] } }, distance: 40, pitch: -20, duration: 1600,
+  }),
+  "GetCameraInfo": () => run("GetCameraInfo"),
+  "ResetCameraView": () => run("ResetCameraView"),
+  "CameraRoamStart": () => run("CameraRoamStart", {
+    keyframes: [
+      { position: { x: 140, y: 100, z: 140 }, pitch: -30, yaw: 225 },
+      { position: { x: -140, y: 100, z: 140 }, pitch: -30, yaw: 135 },
+      { position: { x: -140, y: 100, z: -140 }, pitch: -30, yaw: 45 },
+      { position: { x: 140, y: 100, z: -140 }, pitch: -30, yaw: 315 },
+    ],
+    loop: "loop", totalDuration: 20000,
+  }),
+  "CameraRoamStop": () => run("CameraRoamStop"),
+
+  /* 实体 */
+  "SetEntityVisible-hide": () => run("SetEntityVisible", { targets: { eids: ["buildings-01"] }, visible: false }),
+  "SetEntityVisible-show": () => run("SetEntityVisible", { targets: { eids: ["buildings-01"] }, visible: true }),
+  "SetEntityOutline-on": () => run("SetEntityOutline", { targets: { eids: ["buildings-02"] }, enable: true, color: "#FF6A00", thickness: 3 }),
+  "SetEntityOutline-off": () => run("SetEntityOutline", { targets: { eids: ["buildings-02"] }, enable: false }),
+  "SetEntityHighlight-on": () => run("SetEntityHighlight", { targets: { eids: ["buildings-03"] }, enable: true, color: "#409EFF" }),
+  "SetEntityHighlight-off": () => run("SetEntityHighlight", { targets: { eids: ["buildings-03"] }, enable: false }),
+  "LocateEntity": () => run("LocateEntity", { targets: { eids: ["facilities-25"] }, distance: 50 }),
+  "GetEntityInfo": () => run("GetEntityInfo", { entityNames: ["建筑-3", "巡检车-01"] }),
+  "MoveEntityByPath": () => run("MoveEntityByPath", {
+    targets: { eids: ["vehicle-01"] },
+    path: circle(45, 24, 1),
+    duration: 12000, loop: "loop",
+  }),
+
+  /* 图层 */
+  "GetLayerList": () => run("GetLayerList"),
+  "SetLayerVisible-off": () => run("SetLayerVisible", { layerNames: ["facilities"], visible: false }),
+  "SetLayerVisible-on": () => run("SetLayerVisible", { layerNames: ["facilities"], visible: true }),
+  "SetLayerOpacity": () => run("SetLayerOpacity", { layerName: "buildings", opacity: 0.35 }),
+
+  /* 天气 */
+  "SetWeatherEffect": () => {
+    const type = $("#weather-type").value;
+    const intensity = Number($("#weather-intensity").value);
+    return run("SetWeatherEffect", { type, intensity });
+  },
+
+  /* 特效 */
+  "SetHeatmap": () => run("SetHeatmap", { heatmapId: "hm-1", points: heatPoints(), radius: 30 }),
+  "SetHeatmap-column": () => run("SetHeatmap", { heatmapId: "hm-1", points: heatPoints(), radius: 25, mode: "column", columnHeight: 28 }),
+  "UpdateHeatmap": () => run("UpdateHeatmap", { heatmapId: "hm-1", points: circle(50, 8, 0).map((p, i) => ({ position: p, weight: 0.5 + 0.5 * ((i % 3) / 2) })) }),
+  "RemoveHeatmap": () => run("RemoveHeatmap", { heatmapId: "hm-1" }),
+  "SetHighlightRegion": () => run("SetHighlightRegion", {
+    regionId: "region-1", boundary: circle(60, 6, 0), color: "#409EFF", opacity: 0.35, extruded: true, extrudeHeight: 18,
+  }),
+  "SetParticleEffect": () => run("SetParticleEffect", { effectId: "fx-fire", preset: "fire", position: { x: 30, y: 0.5, z: -30 }, scale: 1.5 }),
+  "SetLightEffect": () => run("SetLightEffect", { lightId: "light-1", type: "point", position: { x: 0, y: 25, z: 0 }, color: "#FFD27D", intensity: 0.9, enable: true }),
+
+  /* 覆盖物 */
+  "AddPOI": () => run("AddPOI", {
+    poiId: "poi-1", position: { x: 25, y: 30, z: 0 },
+    content: `<div style="background:#fff;border:1px solid #e3e6eb;border-radius:6px;padding:6px 10px;box-shadow:0 2px 8px rgba(0,0,0,.15);font-size:12px;"><b>中央枢纽塔</b><br/><span style="color:#6a737d">负载 76% · 在线</span></div>`,
+    offset: { x: 0, y: -40 },
+  }),
+  "AddPOI-xss": () => run("AddPOI", {
+    poiId: "poi-2", position: { x: -30, y: 25, z: 20 },
+    content: `<div style="padding:6px 10px;background:#fff;border-radius:6px;"><b>安全标注</b><script>alert('xss')<\/script><img src="x" onerror="alert(1)"><iframe src="https://evil.example"><\/iframe><div>危险内容已剥离，正文保留</div></div>`,
+  }),
+  "UpdatePOI": () => run("UpdatePOI", { poiId: "poi-1", content: `<div style="background:#fff;border:1px solid #e3e6eb;border-radius:6px;padding:6px 10px;font-size:12px;"><b>中央枢纽塔</b><br/><span style="color:#cf222e">负载 94% · 告警</span></div>` }),
+  "AddPath": () => run("AddPath", { pathId: "path-1", points: circle(55, 32, 0.6), color: "#3FB950", width: 2.5, flowSpeed: 0.6 }),
+  "Add3DText": () => run("Add3DText", { textId: "text-1", position: { x: 0, y: 12, z: 0 }, text: "中央枢纽", fontSize: 64, color: "#FFD27D" }),
+  "ClearCoverings": () => run("ClearCoverings", {}),
+
+  /* 错误码与扩展性 */
+  "bad-command": () => run("NoSuchCommand", {}),
+  "bad-scene": () => run("LoadScene", { sceneId: "not-exist" }),
+  "bad-selector": () => run("SetEntityVisible", { targets: {}, visible: true }),
+  "custom-cmd": () => run("Demo.GetServerTime", {}),
+  "list-commands": () => {
+    const list = api.listCommands();
+    log("cmd", `listCommands <span class="dim">共 ${list.length} 个命令：${list.map((c) => c.name).join(", ")}</span>`);
+  },
+};
+
+/* 自定义命令注册（可扩展机制演示）：业务方以 'Biz.' 前缀注册私有命令 */
+api.registerCommand({
+  name: "Demo.GetServerTime",
+  category: "custom",
+  description: "示例自定义命令：返回当前服务器侧（浏览器）时间",
+  since: "1.0.0",
+  queue: "parallel",
+  timeout: 3000,
+  handler: async () => ({ now: new Date().toISOString(), tz: Intl.DateTimeFormat().resolvedOptions().timeZone }),
+});
+
+/* ============ UI 绑定 ============ */
+document.querySelectorAll("button.cmd").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const fn = actions[btn.dataset.run];
+    if (fn) Promise.resolve(fn()).catch((e) => log("err", `异常: ${escapeHtml(String(e?.message ?? e))}`));
+  });
+});
+$("#weather-intensity").addEventListener("input", (e) => { $("#weather-intensity-val").textContent = e.target.value; });
+
+/* ============ 启动 ============ */
+const boot = await run("LoadScene", { sceneId: "demo" });
+const cmds = api.listCommands();
+$("#meta").innerHTML = `内置命令 <b>${cmds.filter((c) => !c.name.startsWith("Demo.")).length}</b> + 自定义 1 · SDK ${api.diagnostics.version} · Babylon WebGL`;
+if (boot.code === 0) {
+  log("cmd", `演示就绪：点击左侧按钮体验统一入口 <span class="dim">twin.execute(command, params)</span>`);
+}
+</script>
+</body>
+</html>
